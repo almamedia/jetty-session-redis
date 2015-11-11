@@ -227,6 +227,7 @@ public final class RedisSessionManager extends SessionManagerSkeleton<RedisSessi
                 return true;
             }
         };
+        private final Map<String,Object> _attributes = new HashMap<String, Object>();
 
         private RedisSession(HttpServletRequest request) {
             super(request);
@@ -266,23 +267,57 @@ public final class RedisSessionManager extends SessionManagerSkeleton<RedisSessi
         }
 
         @Override
-        public void setAttribute(String name, Object value) {
-            super.setAttribute(name, value);
-            redisMap.put("attributes", "");
-        }
-
-        @Override
         public void removeAttribute(String name) {
             super.removeAttribute(name);
             redisMap.put("attributes", "");
         }
 
         public final Map<String, Object> getSessionAttributes() {
-            Map<String, Object> attrs = new LinkedHashMap<String, Object>();
-            for (String key : super.getNames()) {
-                attrs.put(key, super.doGet(key));
+            Map<String, Object> attrs = new HashMap<String, Object>();
+            for (String key : getNames()) {
+                attrs.put(key, doGet(key));
             }
             return attrs;
+        }
+
+        public Map<String,Object> getAttributeMap() {
+            return getSessionAttributes();
+        }
+
+        public Set<String> getNames() {
+            synchronized(this) {
+                return new HashSet(this._attributes.keySet());
+            }
+        }
+
+        @Override
+        protected Object doPutOrRemove(String name, Object value) {
+            return value == null?this._attributes.remove(name):this._attributes.put(name, value);
+        }
+
+        protected Object doGet(String name) {
+            return this._attributes.get(name);
+        }
+
+        public void setAttribute(String name, Object value) {
+            Object old;
+            synchronized(this) {
+                this.checkValid();
+                old = this.doPutOrRemove(name, value);
+            }
+
+            if(value == null || !value.equals(old)) {
+                if(old != null) {
+                    this.unbindValue(name, old);
+                }
+
+                if(value != null) {
+                    this.bindValue(name, value);
+                }
+                this._attributes.put(name, value);
+                redisMap.put("attributes", "");
+                doSessionAttributeListeners(this, name, old, value);
+            }
         }
 
         @Override
