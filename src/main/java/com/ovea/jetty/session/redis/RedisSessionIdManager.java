@@ -16,7 +16,12 @@
 package com.ovea.jetty.session.redis;
 
 import com.ovea.jetty.session.SessionIdManagerSkeleton;
+import org.eclipse.jetty.server.Handler;
 import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.server.SessionManager;
+import org.eclipse.jetty.server.handler.ContextHandler;
+import org.eclipse.jetty.server.session.AbstractSession;
+import org.eclipse.jetty.server.session.SessionHandler;
 import org.eclipse.jetty.util.log.Log;
 import org.eclipse.jetty.util.log.Logger;
 import redis.clients.jedis.Jedis;
@@ -25,8 +30,13 @@ import redis.clients.jedis.TransactionBlock;
 import redis.clients.jedis.exceptions.JedisException;
 
 import javax.naming.InitialContext;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpSession;
+import java.lang.ref.WeakReference;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * @author Mathieu Carbou (mathieu.carbou@gmail.com)
@@ -95,6 +105,11 @@ public final class RedisSessionIdManager extends SessionIdManagerSkeleton {
                 return jedis.sismember(REDIS_SESSIONS_KEY, clusterId);
             }
         });
+    }
+
+    @Override
+    public void renewSessionId(String s, String s1, HttpServletRequest httpServletRequest) {
+        // try to do nothing
     }
 
     @Override

@@ -18,6 +18,7 @@ package com.ovea.jetty.session.redis;
 import com.ovea.jetty.session.Serializer;
 import com.ovea.jetty.session.SessionManagerSkeleton;
 import com.ovea.jetty.session.serializer.XStreamSerializer;
+import org.eclipse.jetty.server.session.AbstractSessionManager;
 import org.eclipse.jetty.util.log.Log;
 import org.eclipse.jetty.util.log.Logger;
 import redis.clients.jedis.Jedis;
@@ -214,6 +215,16 @@ public final class RedisSessionManager extends SessionManagerSkeleton<RedisSessi
         });
     }
 
+    @Override
+    protected void shutdownSessions() throws Exception {
+        jedisExecutor.execute(new JedisCallback<Object>() {
+            @Override
+            public Object execute(Jedis jedis) {
+                return jedis.shutdown();
+            }
+        });
+    }
+
     final class RedisSession extends SessionManagerSkeleton.SessionSkeleton {
 
         private final Map<String, String> redisMap = new TreeMap<String, String>();
@@ -256,7 +267,7 @@ public final class RedisSessionManager extends SessionManagerSkeleton<RedisSessi
             super.setMaxInactiveInterval(parseInt(redisData.get("maxIdle")));
             setCookieSetTime(parseLong(redisData.get("cookieSet")));
             for (Map.Entry<String, Object> entry : attributes.entrySet()) {
-                super.doPutOrRemove(entry.getKey(), entry.getValue());
+                doPutOrRemove(entry.getKey(), entry.getValue());
             }
             super.access(parseLong(redisData.get("lastAccessed")));
         }
@@ -280,6 +291,15 @@ public final class RedisSessionManager extends SessionManagerSkeleton<RedisSessi
             return attrs;
         }
 
+        @Override
+        public final int getAttributes() {
+            synchronized (this)
+            {
+                checkValid();
+                return _attributes.size();
+            }
+        }
+
         public Map<String,Object> getAttributeMap() {
             return getSessionAttributes();
         }
@@ -291,11 +311,12 @@ public final class RedisSessionManager extends SessionManagerSkeleton<RedisSessi
         }
 
         @Override
-        protected Object doPutOrRemove(String name, Object value) {
+        public Object doPutOrRemove(String name, Object value) {
             return value == null?this._attributes.remove(name):this._attributes.put(name, value);
         }
 
-        protected Object doGet(String name) {
+        @Override
+        public Object doGet(String name) {
             return this._attributes.get(name);
         }
 
@@ -366,6 +387,41 @@ public final class RedisSessionManager extends SessionManagerSkeleton<RedisSessi
                     redisMap.clear();
                 }
             }
+        }
+
+        @Override
+        public void clearAttributes() {
+            while (_attributes!=null && _attributes.size()>0)
+            {
+                ArrayList<String> keys;
+                synchronized(this)
+                {
+                    keys=new ArrayList<String>(_attributes.keySet());
+                }
+
+                Iterator<String> iter=keys.iterator();
+                while (iter.hasNext())
+                {
+                    String key=(String)iter.next();
+
+                    Object value;
+                    synchronized(this)
+                    {
+                        value=doPutOrRemove(key,null);
+                    }
+                    unbindValue(key,value);
+
+                    ((AbstractSessionManager)getSessionManager()).doSessionAttributeListeners(this,key,value,null);
+                }
+            }
+            if (_attributes!=null)
+                _attributes.clear();
+        }
+
+        @Override
+        public Enumeration<String> doGetAttributeNames() {
+            List<String> names=_attributes==null?Collections.EMPTY_LIST:new ArrayList<String>(_attributes.keySet());
+            return Collections.enumeration(names);
         }
 
         public boolean requestStarted() {
